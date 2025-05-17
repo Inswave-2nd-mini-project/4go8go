@@ -1,7 +1,9 @@
 package com.example.demo.common.security.config;
 
+import com.example.demo.common.oauth.CustomOAuth2UserService;
 import com.example.demo.common.security.handler.CustomerAccessDeniedHandler;
 import com.example.demo.common.security.handler.LoginSuccessHandler;
+import com.example.demo.common.security.handler.OAuth2LoginSuccessHandler;
 import com.example.demo.common.security.service.CustomerDetailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.web.filter.HiddenHttpMethodFilter;
 
 import javax.sql.DataSource;
 
@@ -31,6 +34,9 @@ public class SecurityConfig {
 
 	private final CustomerDetailService customerDetailService;
 
+	private final CustomOAuth2UserService customOAuth2UserService;
+
+
 	//권한처리
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -40,34 +46,43 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 				.requestMatchers("/admin/**").hasRole("ADMIN")
 				.requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
-				.requestMatchers("/test/**").hasRole("**")
-				.anyRequest().permitAll())
-			.formLogin(withDefaults()) // 기본 폼 로그인 사용
-			.logout(withDefaults());   // 기본 로그아웃 사용
-
+				.anyRequest().permitAll());
 
 		http.logout(logout -> logout
-						.logoutUrl("/logout")           // 로그아웃 요청을 받을 URL
-						.logoutSuccessUrl("/")          // 로그아웃 성공 후 이동할 URL
-						.deleteCookies("JSESSIONID")    // 로그아웃 시 삭제할 쿠키 설정 (선택 사항)
-						.invalidateHttpSession(true)    // 세션 무효화
-				//.permitAll()
+						.logoutUrl("/logout")           					// 로그아웃 요청을 받을 URL
+						.logoutSuccessUrl("/")          					// 로그아웃 성공 후 이동할 URL
+						.deleteCookies("JSESSIONID")       // 로그아웃 시 삭제할 쿠키 설정 (선택 사항)
+						.invalidateHttpSession(true)    					// 세션 무효화
+						.permitAll()
 		);
 
 		http.formLogin(form -> form
 				.loginPage("/login")
 				.loginProcessingUrl("/loginPro")
 				.defaultSuccessUrl("/")
-				.usernameParameter("email")    // userId에서 email로 변경
-				.passwordParameter("password") // userPw에서 password로 변경
+				.usernameParameter("email")
+				.passwordParameter("password")
 				.successHandler(authenticationSuccessHandler())
 				.permitAll()
 		);
 
+		// OAuth2 로그인 설정 추가
+		http.oauth2Login(oauth2 -> oauth2
+				.loginPage("/login")
+				.userInfoEndpoint(userInfo -> userInfo
+						.userService(customOAuth2UserService)
+				)
+				.successHandler(oAuth2AuthenticationSuccessHandler())
+		);
+
 		http.userDetailsService(customerDetailService); //사용자 정의 인증 방식 (mybatis 연동)
 		http.exceptionHandling(exceptions -> exceptions.accessDeniedHandler(accessDeniedHandler()));
-
 		return http.build();
+	}
+	// HiddenHttpMethodFilter 빈만 별도 등록
+	@Bean
+	public HiddenHttpMethodFilter hiddenHttpMethodFilter() {
+		return new HiddenHttpMethodFilter();
 	}
 
 	//권한접근 제어 처리
@@ -94,6 +109,9 @@ public class SecurityConfig {
 	public AuthenticationSuccessHandler authenticationSuccessHandler(){
 		return new LoginSuccessHandler();
 	}
+
+	@Bean
+	public AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler() { return new OAuth2LoginSuccessHandler(); }
 
 }
 
